@@ -1,15 +1,15 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# Sayfa Genişliği ve Başlık
+# Sayfa Ayarları
 st.set_page_config(page_title="Mary Hotels Reklamasyon", layout="wide")
 
-# Tasarım ve Stil (Mary Palace Kurumsal Renkleri için)
+# Stil Düzenleme
 st.markdown("""
     <style>
-    .stApp { background-color: #f8f9fa; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    .stApp { background-color: #f4f7f6; }
+    [data-testid="stMetricValue"] { font-size: 1.8rem; color: #d32f2f; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -21,74 +21,59 @@ menu = st.sidebar.radio("MENÜ", ["📩 YENİ KAYIT", "🔍 ARAŞTIRMA & SAVUNMA
 # --- 1. YENİ KAYIT ---
 if menu == "📩 YENİ KAYIT":
     st.header("📩 Yeni Reklamasyon Kaydı")
+    
     with st.form("kayit_formu"):
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
             misafir = st.text_input("Misafir Adı Soyadı")
             oda = st.text_input("Oda No")
-            # Hem seçmeli hem yazmalı Operatör alanı:
             op_liste = ["TUI", "LMX", "FTI", "DERTOUR", "JOLLY", "ETUR", "DİĞER..."]
             operator_secim = st.selectbox("Operatör Seçin", op_liste)
-            operator_manuel = st.text_input("Operatör Listede Yoksa Buraya Yazın")
+            operator_manuel = st.text_input("Operatör Listede Yoksa Yazın")
             final_operator = operator_manuel if operator_manuel else operator_secim
             
         with col2:
-            tarih = st.date_input("Kayıt Tarihi", datetime.now())
-            dosya = st.file_uploader("📁 Belge/Voucher Yükle", type=['pdf', 'png', 'jpg', 'jpeg'])
+            kayit_tarihi = st.date_input("Kayıt Tarihi", datetime.now())
+            # Otomatik 14 gün sonrası 'Son Cevaplama' olarak atanır
+            varsayilan_deadline = kayit_tarihi + timedelta(days=14)
+            son_cevap_tarihi = st.date_input("⚠️ Son Cevaplama Tarihi", varsayilan_deadline)
+            
+        with col3:
+            st.write("📁 Evrak Yükleme")
+            dosya = st.file_uploader("Voucher/Resim Seç", type=['pdf', 'png', 'jpg', 'jpeg'])
         
         sikayet = st.text_area("Şikayet Detayı / Notlar")
         
-        if st.form_submit_button("Sisteme İşle"):
+        if st.form_submit_button("Sisteme İşle ve Takvime Ekle"):
             if misafir and final_operator:
-                st.success(f"✅ {misafir} kaydı {final_operator} operatörü ile sisteme eklendi.")
-                # Buraya Google Sheets yazma kodu eklenecek
+                st.success(f"✅ Kayıt Alındı! Son Cevaplama: {son_cevap_tarihi.strftime('%d.%m.%Y')}")
+                # Google Sheets'e 'son_cevap_tarihi' sütunuyla birlikte yazılacak
             else:
-                st.warning("Lütfen en azından Misafir ve Operatör bilgilerini doldurun.")
+                st.warning("Lütfen zorunlu alanları (Misafir, Operatör) doldurun.")
 
 # --- 2. ARAŞTIRMA & SAVUNMA ---
 elif menu == "🔍 ARAŞTIRMA & SAVUNMA":
     st.header("🔍 Araştırma ve Savunma Süreci")
-    st.info("Kayıtlı reklamasyonlar üzerinde iç araştırma notlarını buradan güncelleyin.")
     
-    # Örnek bir kayıt seçme alanı (Veritabanı bağlandığında burası dolacak)
-    secilen_kayit = st.selectbox("İşlem Yapılacak Kaydı Seçin", ["Henüz Kayıt Yok"])
+    # Süre Takibi İçin Uyarı Paneli
+    st.warning("⏰ Yaklaşan Cevaplama Süreleri: 2 Dosya Süresi Dolmak Üzere!")
     
+    st.subheader("Dosya Güncelle")
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("İç Araştırma")
-        st.text_area("Departman Notları", placeholder="HK, Mutfak veya Ön Büro notlarını buraya girin...")
+        st.text_area("İç Araştırma (Departman Görüşleri)")
     with col2:
-        st.subheader("Resmi Savunma")
-        st.text_area("Savunma Metni", placeholder="Acenteye gönderilen resmi cevabı buraya girin...")
-    
-    if st.button("Süreci Güncelle"):
-        st.success("Bilgiler kaydedildi.")
-
-# --- 3. MUTABAKAT ---
-elif menu == "🗄️ MUTABAKAT":
-    st.header("🗄️ Finansal Mutabakat ve Kapatma")
-    st.write("Acente ile mutabık kalınan tutarları yönetin.")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.number_input("İstenen Tutar (€)", min_value=0.0)
-    with col2:
-        st.number_input("Ödenen / Kesilen Tutar (€)", min_value=0.0)
-    with col3:
-        st.selectbox("Durum", ["Beklemede", "İtiraz Edildi", "Ödendi", "İptal"])
+        st.text_area("Resmi Savunma (Acenteye Yazılan)")
         
-    st.file_uploader("📁 İbraname / Ödeme Belgesi Yükle", type=['pdf', 'jpg'])
-    if st.button("Mutabakatı Onayla"):
-        st.balloons()
+    st.button("Süreci Kaydet")
 
-# --- 4. GM RAPORU ---
+# Diğer menüler stabil...
+elif menu == "🗄️ MUTABAKAT":
+    st.header("🗄️ Finansal Mutabakat")
+    st.number_input("Mutabık Kalınan Tutar (€)", min_value=0.0)
+    st.button("Mutabakatı Kapat")
+
 elif menu == "📊 GM RAPORU":
-    st.header("📊 Genel Müdürlük Raporu")
-    st.write("Otel genelindeki reklamasyon istatistikleri.")
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Toplam Şikayet", "0", "0%")
-    c2.metric("Açık Dosyalar", "0", "0")
-    c3.metric("Kurtarılan Tutar", "0 €", "0%")
-    
-    st.info("Veriler Google Sheets üzerinden canlı olarak çekiliyor.")
+    st.header("📊 Genel Müdürlük Özeti")
+    st.columns(3)[0].metric("Kayıp Riski", "1.250 €", "Yüksek")
