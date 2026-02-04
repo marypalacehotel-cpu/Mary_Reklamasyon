@@ -2,23 +2,28 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# --- SAYFA YAPISI ---
-st.set_page_config(page_title="Mary Palace Reklamasyon v1.0", layout="wide", initial_sidebar_state="expanded")
+# --- SAYFA YAPILANDIRMASI ---
+st.set_page_config(page_title="Mary Palace Reklamasyon v1.2", layout="wide")
 
-# --- VERİ BAĞLANTISI ---
+# --- GOOGLE SHEETS BAĞLANTISI ---
+# Tablonuzun ID'si ve CSV formatında çekim linki
 SHEET_ID = "1LJ9wiT2IcSycoVrmpoZ1D5yUwS1WGb3oKuC_0LlbzA4"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
-@st.cache_data(ttl=30) # Her 30 saniyede bir güncellenir
-def load_data():
+@st.cache_data(ttl=10) # 10 saniyede bir veriyi tazeler
+def verileri_yukle():
     try:
-        df = pd.read_csv(SHEET_URL)
-        df.columns = df.columns.str.strip() # Sütun isimlerindeki boşlukları temizle
-        return df
-    except:
+        data = pd.read_csv(SHEET_URL)
+        # Sütun isimlerindeki boşlukları temizle (Hata önleyici)
+        data.columns = data.columns.str.strip()
+        # 'Misafir' sütunu boş olan satırları dikkate alma
+        data = data.dropna(subset=['Misafir'])
+        return data
+    except Exception as e:
+        # Hata durumunda boş bir şablon döndür
         return pd.DataFrame(columns=["ID", "Misafir", "Oda", "Operator", "Kayit_Tarihi", "Deadline", "Durum", "Tutar", "Savunma"])
 
-df = load_data()
+df = verileri_yukle()
 
 # --- YAN PANEL ---
 st.sidebar.markdown("## 🏨 MARY HOTELS SIDE")
@@ -27,79 +32,80 @@ menu = st.sidebar.radio("İŞLEM MERKEZİ", ["📩 YENİ KAYIT", "🔍 ARAŞTIRM
 
 # --- 1. YENİ KAYIT ---
 if menu == "📩 YENİ KAYIT":
-    st.header("📩 Yeni Reklamasyon Dosyası Oluştur")
-    with st.form("main_form"):
+    st.header("📩 Yeni Reklamasyon Kaydı")
+    with st.form("yeni_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
         with c1:
             misafir = st.text_input("Misafir Ad Soyad")
             oda = st.text_input("Oda No")
         with c2:
-            op_list = ["TUI", "LMX", "FTI", "DERTOUR", "JOLLY", "DİĞER..."]
+            op_list = ["TUI", "LMX", "FTI", "DERTOUR", "JOLLY", "ETUR", "DİĞER..."]
             secilen_op = st.selectbox("Operatör", op_list)
-            manuel_op = st.text_input("Listede Yoksa Yazın")
-            final_op = manuel_op if manuel_op else secilen_op
+            manuel_op = st.text_input("Listede yoksa yazın")
+            op = manuel_op if manuel_op else secilen_op
         with c3:
             tarih = st.date_input("Kayıt Tarihi", datetime.now())
             deadline = st.date_input("⚠️ Son Cevaplama", tarih + timedelta(days=14))
         
-        st.file_uploader("📁 Voucher / Kanıt Yükle", type=['pdf','jpg','png'])
+        st.file_uploader("📁 Belge/Voucher Yükle", type=['pdf','jpg','png'])
         sikayet = st.text_area("Şikayet Detayı")
         
-        if st.form_submit_button("KAYDI TAMAMLA"):
-            if misafir and final_op:
-                st.success(f"✅ {misafir} kaydı sisteme işlendi. Lütfen Google Sheet'i kontrol edin.")
+        if st.form_submit_button("Sisteme İşle"):
+            if misafir:
+                st.success(f"✅ {misafir} için kayıt simüle edildi. Google Sheet'e eklemeyi unutmayın!")
             else:
-                st.error("Eksik bilgi: Misafir adı ve Operatör boş bırakılamaz.")
+                st.error("Lütfen Misafir Adı alanını doldurun.")
 
 # --- 2. ARAŞTIRMA & SAVUNMA ---
 elif menu == "🔍 ARAŞTIRMA & SAVUNMA":
-    st.header("🔍 Dosya Araştırma ve Savunma")
-    if df.empty or len(df) == 0:
-        st.info("💡 Şu an aktif dosya bulunamadı. Lütfen Google Sheet'e veri girin veya sütun isimlerini kontrol edin.")
+    st.header("🔍 Araştırma ve Savunma Süreci")
+    
+    # Hata kontrolü: Eğer tablo boşsa veya isimler düzgün gelmediyse
+    isim_listesi = [x for x in df["Misafir"].unique() if str(x) != 'nan'] if not df.empty else []
+    
+    if not isim_listesi:
+        st.warning("⚠️ Tabloda henüz kayıtlı dosya bulunamadı. Lütfen Google Sheet'e veri ekleyin.")
     else:
-        secim = st.selectbox("İşlem Yapılacak Dosyayı Seçin", df["Misafir"].unique())
-        kisi = df[df["Misafir"] == secim].iloc[0]
+        secilen_isim = st.selectbox("İşlem Yapılacak Misafiri Seçin", isim_listesi)
         
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.markdown(f"**Oda:** {kisi['Oda']}  \n**Acente:** {kisi['Operator']}")
-            st.text_area("🏢 İç Araştırma Notları", height=200, placeholder="HK, Mutfak veya Teknik servis görüşleri...")
-        with col2:
-            st.markdown(f"**⚠️ Deadline:** {kisi['Deadline']}")
-            st.text_area("✉️ Resmi Savunma Metni", height=200, placeholder="Acenteye gönderilecek resmi yazı...")
+        # Seçilen isme göre veriyi çek
+        kisi_verisi = df[df["Misafir"] == secilen_isim]
         
-        st.button("💾 Gelişmeleri Kaydet")
+        if not kisi_verisi.empty:
+            kisi = kisi_verisi.iloc[0]
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.info(f"**Oda:** {kisi.get('Oda', 'Bilinmiyor')} | **Acente:** {kisi.get('Operator', 'Bilinmiyor')}")
+                st.text_area("🏢 İç Araştırma (Departman Notları)", height=150)
+            with c2:
+                st.error(f"**⏰ Son Cevaplama Tarihi:** {kisi.get('Deadline', 'Belirtilmedi')}")
+                st.text_area("✉️ Resmi Savunma (Acenteye Yazılan)", height=150)
+            
+            st.button("💾 Gelişmeleri Kaydet")
 
 # --- 3. MUTABAKAT ---
 elif menu == "🗄️ MUTABAKAT":
-    st.header("🗄️ Finansal Mutabakat Paneli")
-    if not df.empty:
-        secim = st.selectbox("Mutabakat Yapılacak Misafir", df["Misafir"].unique())
-        c1, c2, c3 = st.columns(3)
-        c1.number_input("İstenen Tutar (€)", 0.0)
-        c2.number_input("Anlaşılan Tutar (€)", 0.0)
-        c3.selectbox("Dosya Durumu", ["Açık", "Savunma Gönderildi", "Ödeme Yapıldı", "İptal"])
-        st.button("Finansal Kaydı Kapat")
+    st.header("🗄️ Finansal Mutabakat")
+    isim_listesi = [x for x in df["Misafir"].unique() if str(x) != 'nan'] if not df.empty else []
+    
+    if not isim_listesi:
+        st.info("Mutabakat yapılacak dosya bulunamadı.")
     else:
-        st.warning("Mutabakat yapılacak veri bulunamadı.")
+        st.selectbox("Dosya Seç", isim_listesi)
+        c1, c2 = st.columns(2)
+        c1.number_input("Anlaşılan Tutar (€)", 0.0)
+        c2.selectbox("Durum", ["Açık", "Ödeme Bekliyor", "Kapandı", "İptal"])
+        st.button("Mutabakatı Onayla")
 
 # --- 4. GM RAPORU ---
 elif menu == "📊 GM RAPORU":
-    st.header("📊 Genel Müdürlük Özet Raporu")
+    st.header("📊 Genel Müdürlük Raporu")
     
-    # Metrikler
-    t1, t2, t3, t4 = st.columns(4)
-    total_count = len(df) if not df.empty else 0
-    t1.metric("Toplam Şikayet", total_count)
-    t2.metric("Bekleyen Savunma", "2", delta="-1") # Örnek
-    t3.metric("Kurtarılan Tutar", "450 €", "15%") # Örnek
-    t4.metric("Kayıp Riski", "1.200 €", delta_color="inverse")
-
-    st.subheader("📋 Güncel Dosya Listesi")
+    t1, t2, t3 = st.columns(3)
+    t1.metric("Toplam Dosya", len(df))
+    t2.metric("Açık Dosya", len(df[df["Durum"] != "Kapandı"]) if "Durum" in df.columns else "0")
+    t3.metric("Kurtarılan Tutar", "0 €")
+    
+    st.subheader("📋 Güncel Kayıt Listesi")
     st.dataframe(df, use_container_width=True)
-    
-    # Basit Grafik
-    if not df.empty and "Operator" in df.columns:
-        st.subheader("📈 Operatöre Göre Dağılım")
-        op_counts = df["Operator"].value_counts()
-        st.bar_chart(op_counts)
